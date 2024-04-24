@@ -67,9 +67,10 @@ var (
 		"red":        "\u001b[31m",
 		"backspace":  "\b\033[K",
 		"cursorleft": "\x1b[1D"}
-	lookup         = make(map[string]int)
-	bookRegex      = regexp.MustCompile(`(\d+\s)?([A-Za-z]+)`)
-	chapRegex      = regexp.MustCompile(` (\d+)`)
+	lookup    = make(map[string]int)
+	bookRegex = regexp.MustCompile(`(\d+\s)?([A-Za-z]+)`)
+	chapRegex = regexp.MustCompile(`\d+`)
+	bookChapRegex = regexp.MustCompile(` (\d+)`)
 	chapVerseRegex = regexp.MustCompile(`(\d+):(\d+)(-\d+)?`)
 	//chapVerseRangeRegex = regexp.MustCompile(`\d+\s+[A-Za-z]+\s+\d+:(\d+)-(\d+)?`)
 )
@@ -89,6 +90,7 @@ func getPassages(addr Address, listing *[]string) {
 	if bookIndex < len(bible.Books) {
 		book := bible.Books[bookIndex]
 		chapterIndex := addr.Chapter
+		fmt.Println(chapterIndex)
 		chapter := book.Chapters[chapterIndex]
 		if addr.Start == -1 && addr.End == -1 {
 			// This means the whole chapter
@@ -129,7 +131,7 @@ func getTexts(searchstr string) []string {
 		bookref := bookRegex.FindAllString(ref, -1)
 		//chapverrange := chapVerseRangeRegex.FindAllString(ref, -1)
 		chapver := chapVerseRegex.FindAllString(ref, -1)
-		chap := chapRegex.FindAllString(ref, -1)
+		chap := bookChapRegex.FindAllString(ref, -1)
 		book := ""
 
 		if len(bookref) == 0 {
@@ -139,6 +141,7 @@ func getTexts(searchstr string) []string {
 				break
 			} else {
 				book = prevBook
+				chap = chapRegex.FindAllString(ref, -1)
 			}
 		} else {
 			book = bookref[0]
@@ -149,16 +152,18 @@ func getTexts(searchstr string) []string {
 			break
 		}
 
+
 		addr := Address{Book: book, Chapter: -1, Start: -1, End: -1}
+		fmt.Println(strings.TrimSpace(chap[0]))
+		num, err := strconv.Atoi(strings.TrimSpace(chap[0]))
+		if err != nil {
+			log.Fatal(fmt.Sprintf("Cannot convert chapter %s to int", chap[0]))
+		}
+		addr.Chapter = num - 1
 
 		if len(chapver) > 0 {
 			cv := strings.Split(chapver[0], ":")
 			// Add chapter
-			num, err := strconv.Atoi(cv[0])
-			if err != nil {
-				log.Fatal(fmt.Sprintf("Cannot convert %s to int", cv[0]))
-			}
-			addr.Chapter = num - 1
 			verses := strings.Split(cv[1], "-")
 			num, err = strconv.Atoi(verses[0])
 			if err != nil {
