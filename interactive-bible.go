@@ -5,13 +5,15 @@ import (
 	"encoding/csv"
     "fmt"
 	"io"
+	// "regexp"
+	"bufio"
 	"strings"
     "os"
 	"os/exec"
 	"log"
 	// "syscall"
 	"sync"
-	"time"
+	// "time"
 	"golang.org/x/term"
 )
 
@@ -69,6 +71,15 @@ func cls() {
 	}
 }
 
+func getTexts(searchstr string) []string {
+	refs := strings.Split(searchstr, ",")
+	for _, ref := range refs {
+		fmt.Println(ref)
+		//bookRef := regexp.MustCompile(`(\d+)\s*([A-Za-z]+)`)
+	}
+	return nil
+}
+
 func search(keyphrase string) []string {
 	var dispstr = ""
 	var listing []string 
@@ -108,6 +119,7 @@ func search(keyphrase string) []string {
 	}
 	return listing
 }
+/*
 
 func updateListing() {
 	fmt.Println("update")
@@ -147,17 +159,16 @@ func handleSearch() {
 			return 
 		case 0x08, 0x7f:
 			inp += string(esc["backspace"])
-		default:
-			inp += string(buf[:])
-		/*
 		case 0x15:
 			fmt.Print(get_n_string(esc["backspace"], len(cmd_str)))
 			cmd_str = ""
-			*/
+		default:
+			inp += string(buf[:])
 		}
 		lock.Unlock()
 	}
 }
+*/
 
 func main() {
 	os_cmds["clear"] = "clear"
@@ -173,6 +184,7 @@ func main() {
 		}
 	}
 
+	/*
 	//Terminal Raw Mode if not in debug mode
 	if !debug_mode {
 		prev_state, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -182,6 +194,7 @@ func main() {
 		old_state = prev_state
 		//Switch back to old state
 	}
+	*/
 
 	filename := "esv.xml"
 	xmlFile, err := os.Open(filename)
@@ -191,7 +204,6 @@ func main() {
 	}
 
 	defer xmlFile.Close()
-
 
 	xmlData, err := io.ReadAll(xmlFile)
 	if err != nil {
@@ -231,12 +243,30 @@ func main() {
 	}
 
 	// Test search 
-	/*
-	listing := search("predestined")
-	for _, result := range listing {
-		fmt.Println(result)
+	for {
+		fmt.Print("> ")
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			input := scanner.Text()
+			cls()
+			if input == "" {
+				continue
+			} else if input[0] == '!' {
+				getTexts(input)
+			} else {
+				listing := search(input)
+				fmt.Println(">", input)
+				count := 0
+				for _, result := range listing {
+					fmt.Println(result)
+					if count == win_height {
+						break
+					}
+				}
+			}
+		}
 	}
-	*/
+	/*
 	go updateListing()
 	go handleSearch()
 
@@ -245,5 +275,5 @@ func main() {
 		time.Sleep(1 * time.Second)
 		lock.Unlock()
 	}
-
+	*/
 }
