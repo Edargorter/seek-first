@@ -1,4 +1,4 @@
-module github.com/quick-search
+module github.com/Edargorter/seek-first
 
 go 1.19
 
