@@ -247,6 +247,7 @@ func search(keyphrase string) []string {
 }
 
 func updateListing() {
+	cls()
 	fmt.Print("Search> ")
 	prev := ""
 	for {
