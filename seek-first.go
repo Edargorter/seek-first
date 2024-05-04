@@ -13,6 +13,7 @@ import (
 	"strings"
 	// "bufio"
 	// "syscall"
+	"math"
 	"sync"
 	"time"
 	"golang.org/x/term"
@@ -55,6 +56,7 @@ type SearchResult struct {
 }
 
 var (
+	update     = make(chan bool)
 	inp_buf    = make([]byte, 1)
 	// os_cmds    = make(map[string]string)
 	win_width  = 75
@@ -76,6 +78,7 @@ var (
 								"red":        "\u001b[31m",
 								"backspace":  "\b\033[K",
 								"cursorleft": "\x1b[1D",
+								"rightn"    :  "\033[%dC", // format string 
 								"clear": "\033[2J",
 								"topLeft": "\033[H"}
 	lookup    = make(map[string]int)
@@ -206,13 +209,14 @@ func getTexts(searchstr string) []string {
 	return listing
 }
 
-func search(keyphrase string) []string {
+func search(keyphrase string, stats *[]int) []string {
 	var dispstr = ""
 	var listing []string
 	kp_len := len(keyphrase)
 	keyphrase = strings.ToLower(keyphrase)
 	for i := range bks {
 		book := bible.Books[i]
+		(*stats)[i] = 0
 		for j := range book.Chapters {
 			chapter := book.Chapters[j]
 			for k := range chapter.Verses {
@@ -220,6 +224,7 @@ func search(keyphrase string) []string {
 				index := strings.Index(strings.ToLower(verse),
 					keyphrase)
 				if index != -1 {
+					(*stats)[i] += 1
 					ref := fmt.Sprintf("%s%s%s %d:%d%s",
 						esc["bg_white"],
 						esc["black"],
@@ -247,14 +252,17 @@ func search(keyphrase string) []string {
 }
 
 func updateListing() {
+	stats := make([]int, len(bks))
+
 	cls()
 	fmt.Print("Search> ")
 	prev := ""
+	width := float64(win_width)
 	for {
 		select {
 		case <- exitSIG:
 			return
-		default:
+		case <- update:
 			// lock.Lock()
 			var listing []string
 			if inp == prev {
@@ -263,24 +271,37 @@ func updateListing() {
 			prev = inp
 			cls()
 			fmt.Print("Search> ", inp, "\r\n")
+			count := 0
 			if len(inp) > 2 {
 				if inp[0] != '!' {
 					listing = getTexts(procStr(inp))
 				} else {
-					listing = search(procStr(inp[1:]))
-					// fmt.Print(">", inp)
+					listing = search(procStr(inp[1:]), &stats)
+					total := 0
+					for i := 0; i < len(stats); i++ {
+						if stats[i] > 0 {
+							fmt.Print(bks[i].Abbr, " (", stats[i], ") ")
+							total += stats[i]
+						}
+					}
+					if total > 0 {
+						fmt.Print("Total: ", total)
+					}
+					fmt.Print("\r\n")
 				}
 			}
-			// search(inp)
-			count := 5
 			for _, result := range listing {
-				fmt.Print(result + "\r\n")
-				if count == win_height {
+				//lines := int(math.Ceil(len(result) / win_width))
+				lines := math.Ceil(float64(len(result)) / width)
+				count += int(lines)
+				if count >= win_height {
 					break
 				}
+				fmt.Print(result + "\r\n")
 			}
 			// lock.Unlock()
-			time.Sleep(20 * time.Millisecond)
+			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], 8 + len(inp)))
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
@@ -291,25 +312,21 @@ func safeQuit(args chan struct{}) bool {
 	return true
 }
 
-func displaySearch() {
-	dispstr := "Search> "
-	for {
-		// lock.Lock()
-		fmt.Print(dispstr + inp + "\r\n")
-		time.Sleep(10 * time.Millisecond)
-		// lock.Unlock()
-	}
-}
-
 func handleSearch() {
 	// fmt.Print("Search\r\n")
 	for {
+		/*
+		reader := bufio.NewReader(os.Stdin)
+		_, err := reader.ReadByte()
+		*/
+
+		// Read a single byte 
 		_, err := os.Stdin.Read(inp_buf)
 		if err != nil {
 			safeQuit(exitSIG)
 		}
+		update <- true 
 		c := inp_buf[0]
-		fmt.Printf("char:%x",c)
 		// lock.Lock()
 		switch c {
 			case 0x3:
@@ -352,7 +369,7 @@ func main() {
 	if term.IsTerminal(0) {
 		width, height, err := term.GetSize(0)
 		if err != nil {
-			//log.Printf("Using default width %v\n", win_width)
+			log.Printf("Using default width %v\n", win_width)
 		} else {
 			win_width = width
 			win_height = height
@@ -415,42 +432,6 @@ func main() {
 			lookup[procStr(record[0])] = i
 		}
 	}
-	// fmt.Print("Search:\r\n")
-
-	// Test search
-	/*
-	for {
-		fmt.Print("> ")
-		scanner := bufio.NewScanner(os.Stdin)
-		if scanner.Scan() {
-			input := scanner.Text()
-			//input := "2 Peter 3:1-4"
-			cls()
-			// fmt.Println(input)
-			if input == "" {
-				continue
-			}
-			var listing []string
-			if input[0] != '!' {
-				input = procStr(input)
-				listing = getTexts(input)
-			} else {
-				input = procStr(input[1:])
-				listing = search(input)
-				fmt.Println(">", input)
-			}
-			count := 0
-			for _, result := range listing {
-				fmt.Println(result)
-				if count == win_height {
-					break
-				}
-			}
-		}
-		os.Stdout.Sync()
-	}
-	*/
-//	go displaySearch()
 	go updateListing()
 	handleSearch()
 }
