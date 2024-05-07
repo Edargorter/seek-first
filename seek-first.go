@@ -15,12 +15,14 @@ import (
 	// "syscall"
 	"math"
 	"sync"
-	"time"
+	// "time"
 	"golang.org/x/term"
 )
 
 const (
 	project_name = "Seek-First"
+	about_str     = "Made by Edargorter (Zachary D. Bowditch) 2024.\r\n -- May all be added unto you --"
+	help_str      = "Search biblical address (e.g. '1 Peter 3:15, 4:11, Jeremiah 2')\r\n or search keyphrase (e.g. '!seek first')"
 )
 
 type Bible struct {
@@ -90,6 +92,19 @@ var (
 )
 
 // Helper functions 
+func max(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 // Return string concatenated N times 
 func getNString(s string, n int) string {
@@ -112,10 +127,12 @@ func cls() {
 }
 
 func getPassages(addr Address, listing *[]string) {
-	bookIndex := lookup[procStr(addr.Book)]
-	if bookIndex < len(bible.Books) {
+	bookIndex, found := lookup[procStr(addr.Book)]
+	if found { // bookIndex < len(bible.Books) {
 		book := bible.Books[bookIndex]
-		chapterIndex := addr.Chapter
+		nChapters := len(book.Chapters) - 1
+		// Now, we avoid "chapter -1" and N > no. of chapters in book 
+		chapterIndex := max(min(addr.Chapter, nChapters), 0) 
 		chapter := book.Chapters[chapterIndex]
 		if addr.Start == -1 && addr.End == -1 {
 			// This means the whole chapter
@@ -146,65 +163,87 @@ func getPassages(addr Address, listing *[]string) {
 	}
 }
 
+func processToken(ref string, prevBook *string, listing *[]string) (string, error) {
+	msg := ""	
+	ref = procStr(ref)
+
+	// for quick reference 
+	if ref == "about" {
+		msg = about_str
+		return msg, nil
+	} else if ref == "help" {
+		msg = help_str
+		return msg, nil
+	}
+	bookref := bookRegex.FindAllString(ref, -1)
+	//chapverrange := chapVerseRangeRegex.FindAllString(ref, -1)
+	chapver := chapVerseRegex.FindAllString(ref, -1)
+	chap := bookChapRegex.FindAllString(ref, -1)
+	book := ""
+
+	if len(bookref) == 0 {
+		// Book not found
+		if *prevBook == "" {
+			msg = fmt.Sprintf("%s (book not found)", ref)
+			return msg, nil
+		} else {
+			book = *prevBook
+			chap = chapRegex.FindAllString(ref, -1)
+		}
+	} else {
+		book = bookref[0]
+	}
+
+	if len(chap) == 0 {
+		// no chapter found
+		msg = fmt.Sprintf("%s (chapter not found)", ref)
+		return msg, nil
+	} 
+	addr := Address{Book: book, Chapter: -1, Start: -1, End: -1}
+	num, err := strconv.Atoi(strings.TrimSpace(chap[0]))
+	if err != nil {
+		msg = fmt.Sprintf("Cannot convert chapter %s to int", chap[0])
+		return msg, err
+	}
+	addr.Chapter = num - 1
+
+	if len(chapver) > 0 {
+		cv := strings.Split(chapver[0], ":")
+		// Add chapter
+		verses := strings.Split(cv[1], "-")
+		num, err = strconv.Atoi(verses[0])
+		if err != nil {
+			// Shouldn't get here because of regex
+			msg = fmt.Sprintf("Cannot convert %s to int", verses[0])
+			return msg, err 
+		}
+		addr.Start = num - 1
+		if len(verses) > 1 {
+			num, err = strconv.Atoi(verses[1])
+			if err != nil {
+				// Shouldn't get here because of regex
+				msg = fmt.Sprintf("Cannot convert %s to int", verses[1])
+				return msg, err 
+			}
+			addr.End = num - 1
+		}
+	}
+	getPassages(addr, listing)
+	*prevBook = book
+	return msg, nil
+}
+
 func getTexts(searchstr string) []string {
 	var listing []string
 	refs := strings.Split(searchstr, ",")
 	prevBook := ""
 	for _, ref := range refs {
-		ref = procStr(ref)
-
-		bookref := bookRegex.FindAllString(ref, -1)
-		//chapverrange := chapVerseRangeRegex.FindAllString(ref, -1)
-		chapver := chapVerseRegex.FindAllString(ref, -1)
-		chap := bookChapRegex.FindAllString(ref, -1)
-		book := ""
-
-		if len(bookref) == 0 {
-			// Book not found
-			if prevBook == "" {
-				listing = append(listing, fmt.Sprintf("%s (book not found)", ref))
-				break
-			} else {
-				book = prevBook
-				chap = chapRegex.FindAllString(ref, -1)
-			}
-		} else {
-			book = bookref[0]
-		}
-		if len(chap) == 0 {
-			// no chapter found
-			listing = append(listing, fmt.Sprintf("%s (chapter not found)", ref))
-			break
-		}
-
-
-		addr := Address{Book: book, Chapter: -1, Start: -1, End: -1}
-		num, err := strconv.Atoi(strings.TrimSpace(chap[0]))
+		msg, err := processToken(ref, &prevBook, &listing)
 		if err != nil {
-			log.Fatal(fmt.Sprintf("Cannot convert chapter %s to int", chap[0]))
-		}
-		addr.Chapter = num - 1
-
-		if len(chapver) > 0 {
-			cv := strings.Split(chapver[0], ":")
-			// Add chapter
-			verses := strings.Split(cv[1], "-")
-			num, err = strconv.Atoi(verses[0])
-			if err != nil {
-				log.Fatal(fmt.Sprintf("Cannot convert %s to int", verses[0]))
-			}
-			addr.Start = num - 1
-			if len(verses) > 1 {
-				num, err = strconv.Atoi(verses[1])
-				if err != nil {
-					log.Fatal(fmt.Sprintf("Cannot convert %s to int", verses[1]))
-				}
-				addr.End = num - 1
+			if msg != "" {
+				listing = append(listing, msg)
 			}
 		}
-
-		getPassages(addr, &listing)
-		prevBook = book
 	}
 	return listing
 }
@@ -302,12 +341,13 @@ func updateListing() {
 			}
 			// lock.Unlock()
 			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(header) + 2 + len(inp)))
-			time.Sleep(10 * time.Millisecond)
+			//time.Sleep(10 * time.Millisecond)
 		}
 	}
 }
 
 func safeQuit(args chan struct{}) bool {
+	cls()
 	term.Restore(int(os.Stdin.Fd()), old_state)
 	os.Exit(0)
 	return true
@@ -323,6 +363,7 @@ func handleSearch() {
 
 		// Read a single byte 
 		_, err := os.Stdin.Read(inp_buf)
+		//fmt.Print("read\r\n")
 		if err != nil {
 			safeQuit(exitSIG)
 		}
@@ -344,6 +385,14 @@ func handleSearch() {
 			// Ctrl-u
 			case 0x15:
 				inp = ""
+
+			// Ctrl-w (remove single word)
+			case 0x17:
+				index := strings.LastIndexByte(strings.TrimRight(inp, " "), ' ')
+				if index < len(inp) {
+					index++
+				}
+				inp = inp[:index]
 
 			// White space 
 			case 0x20:
