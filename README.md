@@ -12,8 +12,10 @@ Search different translations of the Bible by keyphrase or address.
 
 ### Fetch Address
 
-![Fetch Text](images/sf-verse.png "Fetch Address")
+![Fetch Text](images/seek-first-verses.png "Fetch Address")
 
-### Search Keyphrase
+### Search Word/Phrase
 
-![Keyword](images/sf-keyword.png "Search Keyword/Phrase")
+![Keyword](images/seek-first-keyword.png "Search Word")
+
+![Keyphrase](images/seek-first-search-phrase.png "Search Phrase")

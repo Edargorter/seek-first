@@ -253,9 +253,9 @@ func search(keyphrase string, stats *[]int) []string {
 
 func updateListing() {
 	stats := make([]int, len(bks))
-
+	header := "Seek-First"
 	cls()
-	fmt.Print("Search> ")
+	fmt.Printf("%s> ", header)
 	prev := ""
 	width := float64(win_width)
 	for {
@@ -270,7 +270,8 @@ func updateListing() {
 			}
 			prev = inp
 			cls()
-			fmt.Print("Search> ", inp, "\r\n")
+			fmt.Printf("%s> %s\r\n", header, inp)
+			// fmt.Print("Search> ", inp, "\r\n")
 			count := 0
 			if len(inp) > 2 {
 				if inp[0] != '!' {
@@ -294,13 +295,13 @@ func updateListing() {
 				//lines := int(math.Ceil(len(result) / win_width))
 				lines := math.Ceil(float64(len(result)) / width)
 				count += int(lines)
-				if count >= win_height {
+				if count >= win_height + 15 {
 					break
 				}
 				fmt.Print(result + "\r\n")
 			}
 			// lock.Unlock()
-			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], 8 + len(inp)))
+			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(header) + 2 + len(inp)))
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
@@ -346,7 +347,6 @@ func handleSearch() {
 
 			// White space 
 			case 0x20:
-				fmt.Print("White space")
 				inp += " "
 
 			default:
