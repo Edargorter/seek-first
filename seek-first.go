@@ -66,6 +66,7 @@ var (
 	debug_mode = false
 	old_state  *term.State
 	lock       sync.Mutex
+	path       = "data/"
 	bible      Bible
 	bks        []BookName
 	// listing []string
@@ -435,7 +436,7 @@ func main() {
 		//Switch back to old state
 	}
 
-	filename := "esv.xml"
+	filename := path + "esv.xml"
 	xmlFile, err := os.Open(filename)
 	if err != nil {
 		fmt.Printf("Error opening XML file:\r\n", err)
@@ -462,7 +463,8 @@ func main() {
 	}
 
 	// Read book names
-	file, err := os.Open("bible-books.csv")
+	filename = path + "bible-books.csv"
+	file, err := os.Open(filename)
 	if err != nil {
 		fmt.Print("Error opening csv:\r\n", err)
 		return
