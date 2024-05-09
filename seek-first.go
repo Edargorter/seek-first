@@ -240,7 +240,7 @@ func getTexts(searchstr string) []string {
 	prevBook := ""
 	for _, ref := range refs {
 		msg, err := processToken(ref, &prevBook, &listing)
-		if err != nil {
+		if err == nil {
 			if msg != "" {
 				listing = append(listing, msg)
 			}
