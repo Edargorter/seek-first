@@ -15,6 +15,8 @@ import (
 	// "syscall"
 	"math"
 	"sync"
+	"sort"
+	//"slices"
 	// "time"
 	"golang.org/x/term"
 )
@@ -292,6 +294,16 @@ func search(keyphrase string, stats *[]int) []string {
 }
 
 func updateListing() {
+	bk_indices := make([]int, len(bks))
+	for i := 0; i < len(bks); i++ {
+		bk_indices[i] = i
+	}
+	/*
+	stats := make([]struct {
+						index int
+						occ int
+					}, len(bks))
+					*/
 	stats := make([]int, len(bks))
 	header := "Seek-First"
 	cls()
@@ -318,13 +330,26 @@ func updateListing() {
 					listing = getTexts(procStr(inp))
 				} else {
 					listing = search(procStr(inp[1:]), &stats)
+					sort.Slice(bk_indices, func(i, j int) bool {
+						return stats[bk_indices[i]] > stats[bk_indices[j]]
+					})
 					total := 0
+					for i := 0; i < len(bk_indices); i++ {
+						curr := stats[bk_indices[i]]
+						if curr == 0 {
+							break
+						}
+						total += curr
+						fmt.Print(bks[bk_indices[i]].Abbr, " (", curr, ") ")
+					}
+					/*
 					for i := 0; i < len(stats); i++ {
 						if stats[i] > 0 {
 							fmt.Print(bks[i].Abbr, " (", stats[i], ") ")
 							total += stats[i]
 						}
 					}
+					*/
 					if total > 0 {
 						fmt.Print("Total: ", total)
 					}
