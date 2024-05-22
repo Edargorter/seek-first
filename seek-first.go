@@ -396,24 +396,24 @@ func handleSearch() {
 		update <- true 
 		c := inp_buf[0]
 		// lock.Lock()
-		switch c {
-			case 0x3:
+		switch {
+			case c == 0x3:
 				safeQuit(exitSIG)
 				// lock.Unlock()
 				return
 
 			// Backspace, Ctrl-h
-			case 0x08, 0x7f:
+			case c == 0x08 || c == 0x7f:
 				if len(inp) > 0 {
 					inp = inp[:len(inp)-1]
 				}
 
 			// Ctrl-u
-			case 0x15:
+			case c == 0x15:
 				inp = ""
 
 			// Ctrl-w (remove single word)
-			case 0x17:
+			case c == 0x17:
 				index := strings.LastIndexByte(strings.TrimRight(inp, " "), ' ')
 				if index < len(inp) {
 					index++
@@ -421,12 +421,15 @@ func handleSearch() {
 				inp = inp[:index]
 
 			// White space 
-			case 0x20:
+			case c == 0x20:
 				inp += " "
+				
+			case c >= 0x21 && c <= 0x7A:
+				inp += string(c)
 
 			default:
 				// fmt.Print("Char: ", c)
-				inp += string(c)
+				// inp += string(c)
 		}
 		// lock.Unlock()
 	}
