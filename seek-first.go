@@ -17,7 +17,7 @@ import (
 	"sync"
 	"sort"
 	//"slices"
-	// "time"
+	//"time"
 	"golang.org/x/term"
 )
 
@@ -73,6 +73,7 @@ var (
 	bks        []BookName
 	// listing []string
 	inp     string
+	tabpressed = false
 	exitSIG = make(chan struct{})
 	esc     = map[string]string{"reset": "\u001b[0m",
 								"bg_yellow":  "\u001b[43m",
@@ -81,6 +82,7 @@ var (
 								"green":      "\u001b[32m",
 								"black":      "\u001b[30m",
 								"red":        "\u001b[31m",
+								"grey":	      "\u001b[90m",
 								"backspace":  "\b\033[K",
 								"cursorleft": "\x1b[1D",
 								"rightn"    :  "\033[%dC", // format string 
@@ -256,6 +258,7 @@ func search(keyphrase string, stats *[]int) []string {
 	var listing []string
 	kp_len := len(keyphrase)
 	keyphrase = strings.ToLower(keyphrase)
+
 	for i := range bks {
 		book := bible.Books[i]
 		(*stats)[i] = 0
@@ -293,36 +296,58 @@ func search(keyphrase string, stats *[]int) []string {
 	return listing
 }
 
+func getSuggestedSuffix(str string) string {
+	str = procStr(str)
+	for i := range bks {
+		book := bks[i].Name
+		if len(book) > len(str) &&
+		   procStr(book[:len(str)]) == str {
+			// We have a match
+			return book[len(str):]
+		}
+	}
+	return ""
+}
+
 func updateListing() {
+
+	// For match stats purposes 
 	bk_indices := make([]int, len(bks))
 	for i := 0; i < len(bks); i++ {
 		bk_indices[i] = i
 	}
-	/*
-	stats := make([]struct {
-						index int
-						occ int
-					}, len(bks))
-					*/
+
 	stats := make([]int, len(bks))
+	prev := ""
+	width := float64(win_width)
+	sugsuf := ""
+
 	header := "Seek-First"
 	cls()
 	fmt.Printf("%s> ", header)
-	prev := ""
-	width := float64(win_width)
+
 	for {
 		select {
 		case <- exitSIG:
 			return
 		case <- update:
 			// lock.Lock()
+			if tabpressed {
+				tabpressed = false 
+				inp += sugsuf 
+			}
 			var listing []string
 			if inp == prev {
 				continue
 			}
 			prev = inp
+			sugsuf = getSuggestedSuffix(inp)
+			withsug := fmt.Sprintf("%s%s%s%s", inp, esc["grey"], sugsuf, esc["reset"])
 			cls()
-			fmt.Printf("%s> %s\r\n", header, inp)
+			fmt.Printf("%s> %s\r\n", header, withsug)
+			//fmt.Printf("%s %s\r\n", inp, withsug)
+			//time.Sleep(1 * time.Second)
+			
 			// fmt.Print("Search> ", inp, "\r\n")
 			count := 0
 			if len(inp) > 2 {
@@ -342,14 +367,6 @@ func updateListing() {
 						total += curr
 						fmt.Print(bks[bk_indices[i]].Abbr, " (", curr, ") ")
 					}
-					/*
-					for i := 0; i < len(stats); i++ {
-						if stats[i] > 0 {
-							fmt.Print(bks[i].Abbr, " (", stats[i], ") ")
-							total += stats[i]
-						}
-					}
-					*/
 					if total > 0 {
 						fmt.Print("Total: ", total)
 					}
@@ -366,6 +383,8 @@ func updateListing() {
 				fmt.Print(result + "\r\n")
 			}
 			// lock.Unlock()
+
+			// Return cursor to end of input 
 			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(header) + 2 + len(inp)))
 			//time.Sleep(10 * time.Millisecond)
 		}
@@ -424,8 +443,13 @@ func handleSearch() {
 			case c == 0x20:
 				inp += " "
 				
+			//alpha-numeric and special chars 
 			case c >= 0x21 && c <= 0x7A:
 				inp += string(c)
+
+			// Tab key for word completion
+			case c == 0x09:
+				tabpressed = true	
 
 			default:
 				// fmt.Print("Char: ", c)
