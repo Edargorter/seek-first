@@ -13,7 +13,7 @@ import (
 	"strings"
 	// "bufio"
 	// "syscall"
-	"math"
+	// "math"
 	"sync"
 	"sort"
 	//"slices"
@@ -24,7 +24,13 @@ import (
 const (
 	project_name = "Seek-First"
 	about_str     = "Made by Edargorter (Zachary D. Bowditch) 2024.\r\n -- May all be added unto you --"
-	help_str      = "Search biblical address (e.g. '1 Peter 3:15, 4:11, Jeremiah 2')\r\n or search keyphrase (e.g. '!seek first')"
+	help_str      = "Search biblical address (e.g. '1 Peter 3:15, 4:11, Jeremiah 2')\r\n" + 
+	"or search keyphrase (e.g. '!seek first')\r\n" +
+	"Commands:\r\n" +
+	"\t- help (displays this message)\r\n" +
+	"\t- about (author and purpose)\r\n" +
+	"\t- Ctrl-w (delete word)\r\n" +
+	"\t- Ctrl-u (delete entire input)\r\n"
 )
 
 type Bible struct {
@@ -62,6 +68,8 @@ type SearchResult struct {
 var (
 	update     = make(chan bool)
 	inp_buf    = make([]byte, 1)
+	stats 	   []int
+	bk_indices []int
 	// os_cmds    = make(map[string]string)
 	win_width  = 75
 	win_height = 200
@@ -71,8 +79,7 @@ var (
 	path       = "data/"
 	bible      Bible
 	bks        []BookName
-	// listing []string
-	inp     string
+	inp        string
 	tabpressed = false
 	exitSIG = make(chan struct{})
 	esc     = map[string]string{"reset": "\u001b[0m",
@@ -151,7 +158,7 @@ func getPassages(addr Address, listing *[]string) {
 			addr.End = lc
 		}
 		ref := fmt.Sprintf("%s%s%s %d:",
-			esc["bg_white"],
+			esc["bg_yellow"],
 			esc["black"],
 			bks[bookIndex].Abbr,
 			chapterIndex+1)
@@ -168,18 +175,7 @@ func getPassages(addr Address, listing *[]string) {
 	}
 }
 
-func processToken(ref string, prevBook *string, listing *[]string) (string, error) {
-	msg := ""	
-	ref = procStr(ref)
-
-	// for quick reference 
-	if ref == "about" {
-		msg = about_str
-		return msg, nil
-	} else if ref == "help" {
-		msg = help_str
-		return msg, nil
-	}
+func getBibleReference(ref string, prevBook *string, listing *[]string) {
 	bookref := bookRegex.FindAllString(ref, -1)
 	//chapverrange := chapVerseRangeRegex.FindAllString(ref, -1)
 	chapver := chapVerseRegex.FindAllString(ref, -1)
@@ -189,8 +185,8 @@ func processToken(ref string, prevBook *string, listing *[]string) (string, erro
 	if len(bookref) == 0 {
 		// Book not found
 		if *prevBook == "" {
-			msg = fmt.Sprintf("%s (book not found)", ref)
-			return msg, nil
+			(*listing) = append((*listing), fmt.Sprintf("%s (book not found)", ref))
+			return 
 		} else {
 			book = *prevBook
 			chap = chapRegex.FindAllString(ref, -1)
@@ -201,14 +197,14 @@ func processToken(ref string, prevBook *string, listing *[]string) (string, erro
 
 	if len(chap) == 0 {
 		// no chapter found
-		msg = fmt.Sprintf("%s (chapter not found)", ref)
-		return msg, nil
+		(*listing) = append((*listing), fmt.Sprintf("%s (chapter not found)", ref))
+		return 
 	} 
 	addr := Address{Book: book, Chapter: -1, Start: -1, End: -1}
 	num, err := strconv.Atoi(strings.TrimSpace(chap[0]))
 	if err != nil {
-		msg = fmt.Sprintf("Cannot convert chapter %s to int", chap[0])
-		return msg, err
+		(*listing) = append((*listing), fmt.Sprintf("Cannot convert chapter %s to int", chap[0]))
+		return 
 	}
 	addr.Chapter = num - 1
 
@@ -219,57 +215,41 @@ func processToken(ref string, prevBook *string, listing *[]string) (string, erro
 		num, err = strconv.Atoi(verses[0])
 		if err != nil {
 			// Shouldn't get here because of regex
-			msg = fmt.Sprintf("Cannot convert %s to int", verses[0])
-			return msg, err 
+			(*listing) = append((*listing), fmt.Sprintf("Cannot convert %s to int", verses[0]))
+			return 
 		}
 		addr.Start = num - 1
 		if len(verses) > 1 {
 			num, err = strconv.Atoi(verses[1])
 			if err != nil {
 				// Shouldn't get here because of regex
-				msg = fmt.Sprintf("Cannot convert %s to int", verses[1])
-				return msg, err 
+				(*listing) = append((*listing), fmt.Sprintf("Cannot convert %s to int", verses[1]))
+				return 
 			}
 			addr.End = num - 1
 		}
 	}
 	getPassages(addr, listing)
-	*prevBook = book
-	return msg, nil
+	(*prevBook) = book
 }
 
-func getTexts(searchstr string) []string {
-	var listing []string
-	refs := strings.Split(searchstr, ",")
-	prevBook := ""
-	for _, ref := range refs {
-		msg, err := processToken(ref, &prevBook, &listing)
-		if err == nil {
-			if msg != "" {
-				listing = append(listing, msg)
-			}
-		}
-	}
-	return listing
-}
+func getSearchResult(searchstr string, listing *[]string) {
 
-func search(keyphrase string, stats *[]int) []string {
 	var dispstr = ""
-	var listing []string
-	kp_len := len(keyphrase)
-	keyphrase = strings.ToLower(keyphrase)
+	kp_len := len(searchstr)
 
+	// Find matching verses and track stats 
 	for i := range bks {
 		book := bible.Books[i]
-		(*stats)[i] = 0
+		stats[i] = 0
 		for j := range book.Chapters {
 			chapter := book.Chapters[j]
 			for k := range chapter.Verses {
 				verse := chapter.Verses[k]
 				index := strings.Index(strings.ToLower(verse),
-					keyphrase)
+					searchstr)
 				if index != -1 {
-					(*stats)[i] += 1
+					stats[i] += 1
 					ref := fmt.Sprintf("%s%s%s %d:%d%s",
 						esc["bg_white"],
 						esc["black"],
@@ -287,17 +267,68 @@ func search(keyphrase string, stats *[]int) []string {
 					dispstr = fmt.Sprintf("%s %s",
 						ref,
 						dispverse)
-					listing = append(listing, dispstr)
+					(*listing) = append((*listing), dispstr)
 					// fmt.Println(dispstr)
 				}
 			}
 		}
 	}
-	return listing
+
+	// Sort stats in descending order 
+	sort.Slice(bk_indices, func(i, j int) bool {
+		return stats[bk_indices[i]] > stats[bk_indices[j]]
+	})
+
+	// Add to display listing 
+	total := 0
+	statsstr := fmt.Sprintf("\"%s\" : ", searchstr)
+	for i := 0; i < len(bk_indices); i++ {
+		curr := stats[bk_indices[i]]
+		if curr == 0 {
+			break
+		}
+		total += curr
+		statsstr += fmt.Sprintf(" %s [%d] ", bks[bk_indices[i]].Abbr, curr)
+	}
+
+	statsstr += fmt.Sprintf("Total: [%d]", total)
+	(*listing) = append((*listing), statsstr)
+}
+
+func processTokens(tokens []string, listing *[]string) {
+	prevBook := ""
+	for _, token := range tokens {
+		token = procStr(token)
+		if len(token) == 0 {
+			continue 
+		}
+		// for quick reference 
+		if token == "quit" {
+			safeQuit(exitSIG)
+		} else if token == "about" {
+			(*listing) = append((*listing), about_str)
+		} else if token == "help" {
+			(*listing) = append((*listing), help_str)
+		} else if len(token) > 1 && token[0] == '!'{
+			// Then we search for a string in the text 
+			getSearchResult(token[1:], listing)
+		} else {
+			// Search Bible address 
+			getBibleReference(token, &prevBook, listing)
+		}
+	}
+}
+
+func getTokens(inputstr string) []string {
+	tokens := strings.Split(inputstr, ",")
+	return tokens 
 }
 
 func getSuggestedSuffix(str string) string {
 	str = procStr(str)
+	if str == "" {
+		return "help"
+	}
 	for i := range bks {
 		book := bks[i].Name
 		if len(book) > len(str) &&
@@ -312,19 +343,22 @@ func getSuggestedSuffix(str string) string {
 func updateListing() {
 
 	// For match stats purposes 
-	bk_indices := make([]int, len(bks))
+	bk_indices = make([]int, len(bks))
 	for i := 0; i < len(bks); i++ {
 		bk_indices[i] = i
 	}
 
-	stats := make([]int, len(bks))
+	stats = make([]int, len(bks))
 	prev := ""
-	width := float64(win_width)
-	sugsuf := ""
+	// width := float64(win_width)
 
-	header := "Seek-First"
+	sugsuf := getSuggestedSuffix(inp)
+	withsug := fmt.Sprintf("%s%s%s%s", inp, esc["grey"], sugsuf, esc["reset"])
+	header := fmt.Sprintf("%s%s%s>%s", esc["bg_white"], esc["black"], project_name, esc["reset"])
+
 	cls()
-	fmt.Printf("%s> ", header)
+	fmt.Printf("%s %s\r\n", header, withsug)
+	fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(project_name) + 2 + len(inp)))
 
 	for {
 		select {
@@ -336,43 +370,33 @@ func updateListing() {
 				tabpressed = false 
 				inp += sugsuf 
 			}
-			var listing []string
 			if inp == prev {
 				continue
 			}
 			prev = inp
-			sugsuf = getSuggestedSuffix(inp)
+			tokens := getTokens(inp)
+			if inp == "" {
+				sugsuf = "help"
+			} else {
+				sugsuf = getSuggestedSuffix(tokens[len(tokens)-1])
+			}
 			withsug := fmt.Sprintf("%s%s%s%s", inp, esc["grey"], sugsuf, esc["reset"])
 			cls()
-			fmt.Printf("%s> %s\r\n", header, withsug)
-			//fmt.Printf("%s %s\r\n", inp, withsug)
-			//time.Sleep(1 * time.Second)
-			
-			// fmt.Print("Search> ", inp, "\r\n")
-			count := 0
-			if len(inp) > 2 {
-				if inp[0] != '!' {
-					listing = getTexts(procStr(inp))
-				} else {
-					listing = search(procStr(inp[1:]), &stats)
-					sort.Slice(bk_indices, func(i, j int) bool {
-						return stats[bk_indices[i]] > stats[bk_indices[j]]
-					})
-					total := 0
-					for i := 0; i < len(bk_indices); i++ {
-						curr := stats[bk_indices[i]]
-						if curr == 0 {
-							break
-						}
-						total += curr
-						fmt.Print(bks[bk_indices[i]].Abbr, " (", curr, ") ")
-					}
-					if total > 0 {
-						fmt.Print("Total: ", total)
-					}
-					fmt.Print("\r\n")
-				}
+			fmt.Printf("%s %s\r\n", header, withsug)
+
+			// Find search results, if any 
+			var listing []string
+			processTokens(tokens, &listing)
+
+			for _, result := range listing {
+				fmt.Print(result)
+				fmt.Print("\r\n")
 			}
+			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(project_name) + 2 + len(inp)))
+
+			// --------------------
+			/*
+			count := 0
 			for _, result := range listing {
 				//lines := int(math.Ceil(len(result) / win_width))
 				lines := math.Ceil(float64(len(result)) / width)
@@ -383,9 +407,9 @@ func updateListing() {
 				fmt.Print(result + "\r\n")
 			}
 			// lock.Unlock()
+			*/
 
 			// Return cursor to end of input 
-			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(header) + 2 + len(inp)))
 			//time.Sleep(10 * time.Millisecond)
 		}
 	}
@@ -399,16 +423,9 @@ func safeQuit(args chan struct{}) bool {
 }
 
 func handleSearch() {
-	// fmt.Print("Search\r\n")
 	for {
-		/*
-		reader := bufio.NewReader(os.Stdin)
-		_, err := reader.ReadByte()
-		*/
-
 		// Read a single byte 
 		_, err := os.Stdin.Read(inp_buf)
-		//fmt.Print("read\r\n")
 		if err != nil {
 			safeQuit(exitSIG)
 		}
@@ -433,7 +450,9 @@ func handleSearch() {
 
 			// Ctrl-w (remove single word)
 			case c == 0x17:
-				index := strings.LastIndexByte(strings.TrimRight(inp, " "), ' ')
+				spaceindex := strings.LastIndexByte(strings.TrimRight(inp, " "), ' ')
+				commaindex := strings.LastIndexByte(strings.TrimRight(inp, ","), ',')
+				index := max(spaceindex, commaindex)
 				if index < len(inp) {
 					index++
 				}
@@ -450,10 +469,6 @@ func handleSearch() {
 			// Tab key for word completion
 			case c == 0x09:
 				tabpressed = true	
-
-			default:
-				// fmt.Print("Char: ", c)
-				// inp += string(c)
 		}
 		// lock.Unlock()
 	}
