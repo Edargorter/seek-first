@@ -28,6 +28,7 @@ const (
 	"or search keyphrase (e.g. '!seek first')\r\n" +
 	"Commands:\r\n" +
 	"\t- help (displays this message)\r\n" +
+	"\t- quit (exits session)\r\n" + 
 	"\t- about (author and purpose)\r\n" +
 	"\t- Ctrl-w (delete word)\r\n" +
 	"\t- Ctrl-u (delete entire input)\r\n"
@@ -55,6 +56,20 @@ type Address struct {
 	Chapter int
 	Start   int
 	End     int
+}
+
+func (addr Address) isSame(other *Address) bool {
+	return addr.Book == (*other).Book &&
+			addr.Chapter == (*other).Chapter &&
+			addr.Start == (*other).Start &&
+			addr.End == (*other).End 
+}
+
+func (addr *Address) setAddress(other *Address) {
+	addr.Book = (*other).Book
+	addr.Chapter = (*other).Chapter 
+	addr.Start = (*other).Start 
+	addr.End = (*other).End 
 }
 
 type SearchResult struct {
@@ -175,7 +190,7 @@ func getPassages(addr Address, listing *[]string) {
 	}
 }
 
-func getBibleReference(ref string, prevBook *string, listing *[]string) {
+func getBibleReference(ref string, prevAddr *Address, listing *[]string) {
 	bookref := bookRegex.FindAllString(ref, -1)
 	//chapverrange := chapVerseRangeRegex.FindAllString(ref, -1)
 	chapver := chapVerseRegex.FindAllString(ref, -1)
@@ -184,11 +199,11 @@ func getBibleReference(ref string, prevBook *string, listing *[]string) {
 
 	if len(bookref) == 0 {
 		// Book not found
-		if *prevBook == "" {
+		if (*prevAddr).Book == "" {
 			(*listing) = append((*listing), fmt.Sprintf("%s (book not found)", ref))
 			return 
 		} else {
-			book = *prevBook
+			book = (*prevAddr).Book
 			chap = chapRegex.FindAllString(ref, -1)
 		}
 	} else {
@@ -200,37 +215,43 @@ func getBibleReference(ref string, prevBook *string, listing *[]string) {
 		(*listing) = append((*listing), fmt.Sprintf("%s (chapter not found)", ref))
 		return 
 	} 
-	addr := Address{Book: book, Chapter: -1, Start: -1, End: -1}
-	num, err := strconv.Atoi(strings.TrimSpace(chap[0]))
+
+	chapter, err := strconv.Atoi(strings.TrimSpace(chap[0]))
 	if err != nil {
 		(*listing) = append((*listing), fmt.Sprintf("Cannot convert chapter %s to int", chap[0]))
 		return 
-	}
-	addr.Chapter = num - 1
+	} 
+	
+	addr := Address{Book: book, Chapter: -1, Start: -1, End: -1}
+	addr.Chapter = chapter - 1
 
 	if len(chapver) > 0 {
+		// We have verses 
 		cv := strings.Split(chapver[0], ":")
 		// Add chapter
 		verses := strings.Split(cv[1], "-")
-		num, err = strconv.Atoi(verses[0])
+		startverse, err := strconv.Atoi(verses[0])
 		if err != nil {
 			// Shouldn't get here because of regex
 			(*listing) = append((*listing), fmt.Sprintf("Cannot convert %s to int", verses[0]))
 			return 
 		}
-		addr.Start = num - 1
+		addr.Start = startverse - 1
 		if len(verses) > 1 {
-			num, err = strconv.Atoi(verses[1])
+			endverse, err := strconv.Atoi(verses[1])
 			if err != nil {
 				// Shouldn't get here because of regex
 				(*listing) = append((*listing), fmt.Sprintf("Cannot convert %s to int", verses[1]))
 				return 
 			}
-			addr.End = num - 1
+			addr.End = endverse - 1
 		}
 	}
-	getPassages(addr, listing)
-	(*prevBook) = book
+	if !addr.isSame(prevAddr) {
+		// If we've not just seen the same address
+		getPassages(addr, listing)
+	}
+	prevAddr.setAddress(&addr)
 }
 
 func getSearchResult(searchstr string, listing *[]string) {
@@ -296,12 +317,14 @@ func getSearchResult(searchstr string, listing *[]string) {
 }
 
 func processTokens(tokens []string, listing *[]string) {
-	prevBook := ""
+	prevAddr := Address{Book: "", Chapter: -1, Start: -1, End: -1}
+	prevToken := ""
 	for _, token := range tokens {
 		token = procStr(token)
-		if len(token) == 0 {
+		if len(token) == 0 || token == prevToken {
 			continue 
 		}
+		prevToken = token
 		// for quick reference 
 		if token == "quit" {
 			safeQuit(exitSIG)
@@ -314,7 +337,7 @@ func processTokens(tokens []string, listing *[]string) {
 			getSearchResult(token[1:], listing)
 		} else {
 			// Search Bible address 
-			getBibleReference(token, &prevBook, listing)
+			getBibleReference(token, &prevAddr, listing)
 		}
 	}
 }
