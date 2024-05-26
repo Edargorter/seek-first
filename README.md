@@ -8,14 +8,6 @@ Search different translations of the Bible by keyphrase or address.
 ./seek-first
 ```
 
-## Examples
+## Example 
 
-### Fetch Address
-
-![Fetch Text](images/seek-first-verses.png "Fetch Address")
-
-### Search Word/Phrase
-
-![Keyword](images/seek-first-keyword.png "Search Word")
-
-![Keyphrase](images/seek-first-search-phrase.png "Search Phrase")
+![Fetch Text](images/sf-all.png "Fetch address and search")

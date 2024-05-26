@@ -23,7 +23,7 @@ import (
 
 const (
 	project_name = "Seek-First"
-	about_str     = "Made by Edargorter (Zachary D. Bowditch) 2024.\r\n -- May all be added unto you --"
+	about_str     = "Made by Edargorter (Zachary D. Bowditch) 2024.\r\n -- May \"all these things\" be added unto you --"
 	help_str      = "Search biblical address (e.g. '1 Peter 3:15, 4:11, Jeremiah 2')\r\n" + 
 	"or search keyphrase (e.g. '!seek first')\r\n" +
 	"Commands:\r\n" +
@@ -85,6 +85,9 @@ var (
 	inp_buf    = make([]byte, 1)
 	stats 	   []int
 	bk_indices []int
+	num_bg_colours int
+	bg_colours []string
+	bg_index  	int
 	// os_cmds    = make(map[string]string)
 	win_width  = 75
 	win_height = 200
@@ -103,6 +106,8 @@ var (
 								"bg_white":   "\u001b[47;1m",
 								"green":      "\u001b[32m",
 								"black":      "\u001b[30m",
+								"bg_light_orange":"\033[48;5;215m",
+								"bg_light_red":	"\033[48;5;203m",
 								"red":        "\u001b[31m",
 								"grey":	      "\u001b[90m",
 								"backspace":  "\b\033[K",
@@ -153,7 +158,7 @@ func cls() {
 	}	
 }
 
-func getPassages(addr Address, listing *[]string) {
+func getPassages(addr Address, listing *[]string) bool {
 	bookIndex, found := lookup[procStr(addr.Book)]
 	if found { // bookIndex < len(bible.Books) {
 		book := bible.Books[bookIndex]
@@ -173,7 +178,7 @@ func getPassages(addr Address, listing *[]string) {
 			addr.End = lc
 		}
 		ref := fmt.Sprintf("%s%s%s %d:",
-			esc["bg_yellow"],
+			esc[bg_colours[bg_index]],
 			esc["black"],
 			bks[bookIndex].Abbr,
 			chapterIndex+1)
@@ -188,9 +193,14 @@ func getPassages(addr Address, listing *[]string) {
 			(*listing) = append((*listing), dispverse)
 		}
 	}
+	if addr.Start > -1 && addr.End >= addr.Start {
+		// Then, we've added to listing 
+		return true
+	}
+	return false 
 }
 
-func getBibleReference(ref string, prevAddr *Address, listing *[]string) {
+func getBibleReference(ref string, prevAddr *Address, listing *[]string) bool {
 	bookref := bookRegex.FindAllString(ref, -1)
 	//chapverrange := chapVerseRangeRegex.FindAllString(ref, -1)
 	chapver := chapVerseRegex.FindAllString(ref, -1)
@@ -201,7 +211,7 @@ func getBibleReference(ref string, prevAddr *Address, listing *[]string) {
 		// Book not found
 		if (*prevAddr).Book == "" {
 			(*listing) = append((*listing), fmt.Sprintf("%s (book not found)", ref))
-			return 
+			return false 
 		} else {
 			book = (*prevAddr).Book
 			chap = chapRegex.FindAllString(ref, -1)
@@ -213,13 +223,13 @@ func getBibleReference(ref string, prevAddr *Address, listing *[]string) {
 	if len(chap) == 0 {
 		// no chapter found
 		(*listing) = append((*listing), fmt.Sprintf("%s (chapter not found)", ref))
-		return 
+		return false 
 	} 
 
 	chapter, err := strconv.Atoi(strings.TrimSpace(chap[0]))
 	if err != nil {
 		(*listing) = append((*listing), fmt.Sprintf("Cannot convert chapter %s to int", chap[0]))
-		return 
+		return false 
 	} 
 	
 	addr := Address{Book: book, Chapter: -1, Start: -1, End: -1}
@@ -234,7 +244,7 @@ func getBibleReference(ref string, prevAddr *Address, listing *[]string) {
 		if err != nil {
 			// Shouldn't get here because of regex
 			(*listing) = append((*listing), fmt.Sprintf("Cannot convert %s to int", verses[0]))
-			return 
+			return false 
 		}
 		addr.Start = startverse - 1
 		if len(verses) > 1 {
@@ -242,19 +252,21 @@ func getBibleReference(ref string, prevAddr *Address, listing *[]string) {
 			if err != nil {
 				// Shouldn't get here because of regex
 				(*listing) = append((*listing), fmt.Sprintf("Cannot convert %s to int", verses[1]))
-				return 
+				return false
 			}
 			addr.End = endverse - 1
 		}
 	}
+	changeBgIndex := false
 	if !addr.isSame(prevAddr) {
 		// If we've not just seen the same address
-		getPassages(addr, listing)
+		changeBgIndex = getPassages(addr, listing) 
 	}
 	prevAddr.setAddress(&addr)
+	return changeBgIndex
 }
 
-func getSearchResult(searchstr string, listing *[]string) {
+func getSearchResult(searchstr string, listing *[]string) bool {
 
 	var dispstr = ""
 	kp_len := len(searchstr)
@@ -272,7 +284,7 @@ func getSearchResult(searchstr string, listing *[]string) {
 				if index != -1 {
 					stats[i] += 1
 					ref := fmt.Sprintf("%s%s%s %d:%d%s",
-						esc["bg_white"],
+						esc[bg_colours[bg_index]],
 						esc["black"],
 						bks[i].Abbr,
 						j+1,
@@ -314,6 +326,7 @@ func getSearchResult(searchstr string, listing *[]string) {
 
 	statsstr += fmt.Sprintf("Total: [%d]", total)
 	(*listing) = append((*listing), statsstr)
+	return true 
 }
 
 func processTokens(tokens []string, listing *[]string) {
@@ -334,10 +347,14 @@ func processTokens(tokens []string, listing *[]string) {
 			(*listing) = append((*listing), help_str)
 		} else if len(token) > 1 && token[0] == '!'{
 			// Then we search for a string in the text 
-			getSearchResult(token[1:], listing)
+			if getSearchResult(token[1:], listing) {
+				bg_index = (bg_index + 1) % num_bg_colours
+			}
 		} else {
 			// Search Bible address 
-			getBibleReference(token, &prevAddr, listing)
+			if getBibleReference(token, &prevAddr, listing) {
+				bg_index = (bg_index + 1) % num_bg_colours
+			}
 		}
 	}
 }
@@ -371,6 +388,10 @@ func updateListing() {
 		bk_indices[i] = i
 	}
 
+	//Background colours for addresses
+	bg_colours = []string{"bg_light_orange", "bg_light_red"}
+	num_bg_colours = len(bg_colours)
+
 	stats = make([]int, len(bks))
 	prev := ""
 	// width := float64(win_width)
@@ -396,6 +417,7 @@ func updateListing() {
 			if inp == prev {
 				continue
 			}
+			bg_index = 0
 			prev = inp
 			tokens := getTokens(inp)
 			if inp == "" {
