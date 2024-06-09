@@ -80,6 +80,11 @@ type SearchResult struct {
 	}
 }
 
+type TDims struct {
+	width int
+	height int 
+}
+
 var (
 	update     = make(chan bool)
 	inp_buf    = make([]byte, 1)
@@ -112,8 +117,10 @@ var (
 								"grey":	      "\u001b[90m",
 								"backspace":  "\b\033[K",
 								"cursorleft": "\x1b[1D",
-								"rightn"    :  "\033[%dC", // format string 
+								"rightn"    :  "\033[%dC", // format string (n)
 								"clear": "\033[2J",
+								"toPos": "\033[%d;%dH", // format string (row, col)
+								"bottomLeft": "\033[%d;1H", //format string (row)
 								"topLeft": "\033[H"}
 	lookup    = make(map[string]int)
 	bookRegex = regexp.MustCompile(`(\d+\s)?([A-Za-z]+)`)
@@ -136,6 +143,19 @@ func min(a int, b int) int {
 		return a
 	}
 	return b
+}
+
+func getTerminalDims(t_dims *TDims) {
+	//Get terminal dimensions
+	if term.IsTerminal(0) {
+		width, height, err := term.GetSize(0)
+		if err != nil {
+			log.Printf("Using default width %v\n", win_width)
+		} else {
+			(*t_dims).height = height
+			(*t_dims).width = width
+		}
+	}
 }
 
 // Return string concatenated N times 
@@ -345,7 +365,7 @@ func processTokens(tokens []string, listing *[]string) {
 			(*listing) = append((*listing), about_str)
 		} else if token == "help" {
 			(*listing) = append((*listing), help_str)
-		} else if len(token) > 1 && token[0] == '!'{
+		} else if len(token) > 3 && token[0] == '!'{
 			// Then we search for a string in the text 
 			if getSearchResult(token[1:], listing) {
 				bg_index = (bg_index + 1) % num_bg_colours
@@ -382,6 +402,12 @@ func getSuggestedSuffix(str string) string {
 
 func updateListing() {
 
+	// Initial terminal dimensions 
+	t_dims := TDims{}
+	t_dims.width = 0
+	t_dims.height = 0
+	getTerminalDims(&t_dims)
+
 	// For match stats purposes 
 	bk_indices = make([]int, len(bks))
 	for i := 0; i < len(bks); i++ {
@@ -401,8 +427,15 @@ func updateListing() {
 	header := fmt.Sprintf("%s%s%s>%s", esc["bg_white"], esc["black"], project_name, esc["reset"])
 
 	cls()
-	fmt.Printf("%s %s\r\n", header, withsug)
-	fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(project_name) + 2 + len(inp)))
+	//fmt.Printf("%s %s\r\n", header, withsug)
+	//fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(project_name) + 2 + len(inp)))
+
+	// Move cursor to bottom of window and produce search prompt 
+	fmt.Printf("%s%s %s%s", 
+				fmt.Sprintf(esc["bottomLeft"], t_dims.height),
+				header, 
+				withsug, 
+				fmt.Sprintf(esc["toPos"], t_dims.height, len(project_name) + 3 + len(inp)))
 
 	for {
 		select {
@@ -412,11 +445,15 @@ func updateListing() {
 			// lock.Lock()
 			if tabpressed {
 				tabpressed = false 
-				inp += sugsuf 
+				inp = procStr(inp) + sugsuf
 			}
 			if inp == prev {
 				continue
 			}
+			// Update terminal dimensions 
+			getTerminalDims(&t_dims)
+
+			// Display string processing 
 			bg_index = 0
 			prev = inp
 			tokens := getTokens(inp)
@@ -427,7 +464,6 @@ func updateListing() {
 			}
 			withsug := fmt.Sprintf("%s%s%s%s", inp, esc["grey"], sugsuf, esc["reset"])
 			cls()
-			fmt.Printf("%s %s\r\n", header, withsug)
 
 			// Find search results, if any 
 			var listing []string
@@ -437,7 +473,17 @@ func updateListing() {
 				fmt.Print(result)
 				fmt.Print("\r\n")
 			}
-			fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(project_name) + 2 + len(inp)))
+			//fmt.Print(esc["topLeft"], fmt.Sprintf(esc["rightn"], len(project_name) + 2 + len(inp)))
+			//fmt.Print("\r\n")
+			
+			// Move cursor to bottom of window and produce search prompt 
+			fmt.Printf("%s%s %s%s", 
+						fmt.Sprintf(esc["bottomLeft"], t_dims.height),
+						header, 
+						withsug, 
+						fmt.Sprintf(esc["toPos"], t_dims.height, len(project_name) + 3 + len(inp)))
+
+			//fmt.Print(fmt.Sprintf(esc["rightn"], len(project_name) + 2 + len(inp)))
 
 			// --------------------
 			/*
@@ -526,17 +572,6 @@ func procStr(str string) string {
 }
 
 func main() {
-
-	//Get terminal dimensions
-	if term.IsTerminal(0) {
-		width, height, err := term.GetSize(0)
-		if err != nil {
-			log.Printf("Using default width %v\n", win_width)
-		} else {
-			win_width = width
-			win_height = height
-		}
-	}
 
 	//Terminal Raw Mode if not in debug mode
 	if !debug_mode {
