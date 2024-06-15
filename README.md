@@ -2,10 +2,20 @@
 
 Search different translations of the Bible by keyphrase or address.
 
-## Run
+## Status
+
+Runs with ESV (English Standard Version)
+
+## Run binary
 
 ```
 ./seek-first
+```
+
+## Docker
+```
+./build-docker.sh
+docker run --rm -it seek-first
 ```
 
 ## Example 
