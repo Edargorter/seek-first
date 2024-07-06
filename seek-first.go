@@ -7,7 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
+	// "os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -118,7 +118,8 @@ var (
 								"backspace":  "\b\033[K",
 								"cursorleft": "\x1b[1D",
 								"rightn"    :  "\033[%dC", // format string (n)
-								"clear": "\033[2J",
+								//"clear": "\033[2J",
+								"clear": "\033c",
 								"toPos": "\033[%d;%dH", // format string (row, col)
 								"bottomLeft": "\033[%d;1H", //format string (row)
 								"topLeft": "\033[H"}
@@ -169,13 +170,15 @@ func getNString(s string, n int) string {
 
 // Clear screen
 func cls() {
-	//fmt.Print(esc["clear"])
+	fmt.Print(esc["clear"])
+	/*
 	cmd := exec.Command("clear")
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()
 	if err != nil {
 		log.Fatal(err)
 	}	
+	*/
 }
 
 func getPassages(addr Address, listing *[]string) bool {
